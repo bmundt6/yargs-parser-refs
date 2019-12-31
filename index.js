@@ -134,7 +134,7 @@ function parse (args, opts) {
 
   checkConfiguration()
 
-  const $argv = { _: { $ref: [], $value: [] } }
+  const $argv = { _: { $ref: [], $value: [], hide } }
   let notFlags = []
 
   for (let i = 0; i < $tokens.length; ++i) {
@@ -203,11 +203,17 @@ function parse (args, opts) {
           !checkAllAliases(key, flags.counts)
         ) {
           tokenRef.$value = next.$token
-          setArg(key, tokenRef)
+          setArg(key, tokenRef).forEach(obj => {
+            obj.$ref.push(next)
+          })
+          next.$value = tokenRef.$value
           i++
         } else if (!isUndefined(next) && !isUndefined(next.$token) && /^(true|false)$/.test(next.$token)) {
           tokenRef.$value = next.$token
-          setArg(key, tokenRef)
+          setArg(key, tokenRef).forEach(obj => {
+            obj.$ref.push(next)
+          })
+          next.$value = tokenRef.$value
           i++
         } else {
           tokenRef.$value = defaultValue(key)
@@ -533,6 +539,10 @@ function parse (args, opts) {
     return modifiedKeys
   }
 
+  function hide () { // remove token references in $ref of this tokenRef
+    this.$ref.forEach(token => { token.$token = null })
+  }
+
   function addNewAlias (key, alias) {
     if (!(flags.aliases[key] && flags.aliases[key].length)) {
       flags.aliases[key] = [alias]
@@ -822,6 +832,7 @@ function parse (args, opts) {
 
     if (!Array.isArray(o[key].$ref)) o[key].$ref = []
     o[key].$ref.push(token)
+    o[key].hide = hide
     // console.log('setKey: result = %O', obj)
     return o[key]
   }
@@ -1011,31 +1022,37 @@ function parse (args, opts) {
     aliases: flags.aliases
   }
 
-  function flattenArgv ($argv, seen = new Set()) {
-    if (seen.has($argv)) return $argv
-    seen.add($argv)
-    if ($argv === null || typeof $argv !== 'object') return $argv
-    if (Array.isArray($argv)) {
+  function flattenRefs (ref, flatKey = '$value', seen = new Set()) {
+    if (seen.has(ref)) return ref
+    seen.add(ref)
+    if (ref === null || typeof ref !== 'object') return ref
+    if (Array.isArray(ref)) {
       const ret = []
-      for (let ii in $argv) {
-        ret[ii] = flattenArgv($argv[ii], seen)
+      for (let ii in ref) {
+        ret[ii] = flattenRefs(ref[ii], flatKey, seen)
       }
       return ret
     }
     let ret = {}
-    const keys = Object.keys($argv)
-    if (keys.includes('$value')) {
-      return flattenArgv($argv.$value, seen)
+    const keys = Object.keys(ref)
+    if (keys.includes(flatKey)) {
+      return flattenRefs(ref[flatKey], flatKey, seen)
     }
     keys.forEach(key => {
-      ret[key] = flattenArgv($argv[key], seen)
+      ret[key] = flattenRefs(ref[key], flatKey, seen)
     })
     return ret
   }
 
   Object.defineProperty(ret, 'argv', {
     get () {
-      return flattenArgv(this.$ref.$argv)
+      return flattenRefs(this.$ref.$argv, '$value')
+    }
+  })
+
+  Object.defineProperty(ret, 'tokens', {
+    get () {
+      return flattenRefs(this.$ref.$tokens, '$token').filter(x => (typeof x === 'string'))
     }
   })
 
