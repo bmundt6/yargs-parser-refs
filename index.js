@@ -134,11 +134,12 @@ function parse (args, opts) {
 
   checkConfiguration()
 
-  const $argv = { _: { $ref: [], value: [] } }
+  const $argv = { _: { $ref: [], $value: [] } }
   let notFlags = []
 
   for (let i = 0; i < $tokens.length; ++i) {
-    let tokenRef = $tokens[i]
+    const tokenRef = $tokens[i]
+    if (isUndefined(tokenRef)) continue
     let arg = tokenRef.$token
     var broken
     var key
@@ -149,16 +150,14 @@ function parse (args, opts) {
 
     // any unknown option (except for end-of-options, "--")
     if (arg !== '--' && isUnknownOptionAsArg(arg)) {
-      console.log('pushing unknown option %O to _', tokenRef)
-      $argv._.value.push(arg)
+      // console.log('pushing unknown option %O to _', tokenRef)
+      $argv._.$value.push(arg)
       $argv._.$ref.push(tokenRef)
-    // -- separated by =
-    }
-    else if (
+    } else if (
       arg.match(/^--.+=/) || (
         !configuration['short-option-groups'] && arg.match(/^-.+=/)
       )
-    ) {
+    ) { // -- separated by =
       // Using [\s\S] instead of . because js doesn't support the
       // 'dotall' regex modifier. See:
       // http://stackoverflow.com/a/1068308/13216
@@ -177,17 +176,13 @@ function parse (args, opts) {
         tokenRef.$value = m[2]
         setArg(m[1], tokenRef)
       }
-    }
-    else if (arg.match(negatedBoolean) && configuration['boolean-negation']) {
+    } else if (arg.match(negatedBoolean) && configuration['boolean-negation']) {
       key = arg.match(negatedBoolean)[1]
       tokenRef.$value = checkAllAliases(key, flags.arrays) ? [false] : false
       setArg(key, tokenRef)
-
-    // -- separated by space.
-    }
-    else if (arg.match(/^--.+/) || (
+    } else if (arg.match(/^--.+/) || (
       !configuration['short-option-groups'] && arg.match(/^-[^-]+/)
-    )) {
+    )) { // -- separated by space.
       key = arg.match(/^--?(.+)/)[1]
 
       // nargs format = '--foo a b c'
@@ -201,11 +196,11 @@ function parse (args, opts) {
         next = $tokens[i + 1]
 
         if (
-          !isUndefined(next)
-          && !isUndefined(next.$token)
-          && (!next.$token.match(/^-/) || next.$token.match(negative))
-          && !checkAllAliases(key, flags.bools)
-          && !checkAllAliases(key, flags.counts)
+          !isUndefined(next) &&
+          !isUndefined(next.$token) &&
+          (!next.$token.match(/^-/) || next.$token.match(negative)) &&
+          !checkAllAliases(key, flags.bools) &&
+          !checkAllAliases(key, flags.counts)
         ) {
           tokenRef.$value = next.$token
           setArg(key, tokenRef)
@@ -219,36 +214,29 @@ function parse (args, opts) {
           setArg(key, tokenRef)
         }
       }
-
-    // dot-notation flag separated by '='.
-    }
-    else if (arg.match(/^-.\..+=/)) {
+    } else if (arg.match(/^-.\..+=/)) { // dot-notation flag separated by '='.
       m = arg.match(/^-([^=]+)=([\s\S]*)$/)
       tokenRef.$value = m[2]
       setArg(m[1], tokenRef)
-
-    // dot-notation flag separated by space.
-    }
-    else if (arg.match(/^-.\..+/) && !arg.match(negative)) {
+    } else if (arg.match(/^-.\..+/) && !arg.match(negative)) {
       next = $tokens[i + 1]
       key = arg.match(/^-(.\..+)/)[1]
 
       if (
-        next !== undefined
-        && !next.$token.match(/^-/)
-        && !checkAllAliases(key, flags.bools)
-        && !checkAllAliases(key, flags.counts)
+        next !== undefined &&
+        !next.$token.match(/^-/) &&
+        !checkAllAliases(key, flags.bools) &&
+        !checkAllAliases(key, flags.counts)
       ) {
         tokenRef.$value = next.$token
         setArg(key, tokenRef)
         i++
-      }
-      else {
+      } else {
         tokenRef.$value = defaultValue(key)
         setArg(key, tokenRef)
       }
-    }
-    else if (arg.match(/^-[^-]+/) && !arg.match(negative)) {
+    } else if (arg.match(/^-[^-]+/) && !arg.match(negative)) {
+      // dot-notation flag separated by space.
       letters = arg.slice(1, -1).split('')
       broken = false
 
@@ -284,8 +272,8 @@ function parse (args, opts) {
 
         // current letter is an alphabetic character and next value is a number
         if (
-          /[A-Za-z]/.test(letters[j])
-          && /^-?\d+(\.\d*)?(e-?\d+)?$/.test(next)
+          /[A-Za-z]/.test(letters[j]) &&
+          /^-?\d+(\.\d*)?(e-?\d+)?$/.test(next)
         ) {
           tokenRef.$value = next
           setArg(letters[j], tokenRef)
@@ -318,17 +306,27 @@ function parse (args, opts) {
           next = $tokens[i + 1]
 
           if (
-            next !== undefined
-            && (!/^(-|--)[^-]/.test(next.$token) || next.$token.match(negative))
-            && !checkAllAliases(key, flags.bools)
-            && !checkAllAliases(key, flags.counts)
+            next !== undefined &&
+            next.$token !== undefined &&
+            (!/^(-|--)[^-]/.test(next.$token) || next.$token.match(negative)) &&
+            !checkAllAliases(key, flags.bools) &&
+            !checkAllAliases(key, flags.counts)
           ) {
             tokenRef.$value = next.$token
-            setArg(key, tokenRef)
+            // console.log('setting short option -%s using token %O', key, tokenRef)
+            setArg(key, tokenRef).forEach(obj => {
+              obj.$ref.push(next)
+            })
             i++
-          } else if (/^(true|false)$/.test(next.$token)) {
+          } else if (
+            next !== undefined &&
+            next.$token !== undefined &&
+            /^(true|false)$/.test(next.$token)
+          ) {
             tokenRef.$value = next.$token
-            setArg(key, tokenRef)
+            setArg(key, tokenRef).forEach(obj => {
+              obj.$ref.push(next)
+            })
             i++
           } else {
             tokenRef.$value = defaultValue(key)
@@ -336,17 +334,14 @@ function parse (args, opts) {
           }
         }
       }
-    }
-    else if (arg === '--') {
+    } else if (arg === '--') {
       notFlags = $tokens.slice(i + 1)
       break
-    }
-    else if (configuration['halt-at-non-option']) {
+    } else if (configuration['halt-at-non-option']) {
       notFlags = $tokens.slice(i)
       break
-    }
-    else {
-      $argv._.value.push(maybeCoerceNumber('_', arg))
+    } else {
+      $argv._.$value.push(maybeCoerceNumber('_', arg))
       $argv._.$ref.push(tokenRef)
     }
   }
@@ -367,14 +362,14 @@ function parse (args, opts) {
 
   // for any counts either not in args or without an explicit default, set to 0
   Object.keys(flags.counts).forEach(function (key) {
-    if (!hasKey($argv, key.split('.'))) setArg(key, 0)
+    if (!hasKey($argv, key.split('.'))) setArg(key, { $ref: [], $value: 0 })
   })
 
   // '--' defaults to undefined.
-  if (notFlagsOption && notFlags.length) $argv[notFlagsArgv] = { value: [], $ref: [] }
+  if (notFlagsOption && notFlags.length) $argv[notFlagsArgv] = { $value: [], $ref: [] }
   notFlags.forEach(function (tokenRef) {
     $argv[notFlagsArgv].$ref.push(tokenRef)
-    $argv[notFlagsArgv].value.push(tokenRef.$token)
+    $argv[notFlagsArgv].$value.push(tokenRef.$token)
   })
 
   if (configuration['camel-case-expansion'] && configuration['strip-dashed']) {
@@ -401,7 +396,7 @@ function parse (args, opts) {
     const toEat = checkAllAliases(key, flags.nargs)
 
     if (toEat === 0) {
-      setArg(key, defaultValue(key))
+      setArg(key, { $ref: [], $value: defaultValue(key) })
       return i
     }
 
@@ -427,33 +422,61 @@ function parse (args, opts) {
   // following it... YUM!
   // e.g., --foo apple banana cat becomes ["apple", "banana", "cat"]
   function eatArray (i, key, $tokens) {
-    let argsToSet = []
     let next = $tokens[i + 1]
-    next.$value = []
+    const arrayRef = { $ref: [], $value: [] }
+    // console.log('eatArray: eating %O', $tokens.slice(i + 1, $tokens.length))
 
-    if (checkAllAliases(key, flags.bools) && !(/^(true|false)$/.test(next.$token))) {
-      next.$value.push(true)
-    }
-    else if (isUndefined(next) || isUndefined(next.$token) || (/^-/.test(next.$token) && !negative.test(next.$token) && !isUnknownOptionAsArg(next.$token))) {
+    if (
+      checkAllAliases(key, flags.bools) &&
+      (isUndefined(next) || !(/^(true|false)$/.test(next.$token)))
+    ) {
+      arrayRef.$value.push(true)
+      if (next) {
+        arrayRef.$ref.push(next)
+        if (next.$token) arrayRef.$token = next.$token
+      }
+      // console.log('eatArray: new array after pushing true: %O', arrayRef)
+    } else if (
+      isUndefined(next) ||
+      isUndefined(next.$token) ||
+      (/^-/.test(next.$token) &&
+      !negative.test(next.$token) &&
+      !isUnknownOptionAsArg(next.$token))
+    ) {
       // for keys without value ==> argsToSet remains an empty []
       // set user default value, if available
       if (defaults.hasOwnProperty(key)) {
+        if (next) {
+          arrayRef.$ref.push(next)
+          if (next.$token) arrayRef.$token = next.$token
+        }
         const defVal = defaults[key]
-        if (Array.isArray(defVal)) next.$value = next.$value.concat(defVal)
-        else next.$value.push(defVal)
+        if (Array.isArray(defVal)) arrayRef.$value = arrayRef.$value.concat(defVal)
+        else arrayRef.$value.push(defVal)
       }
-    }
-    else {
+    } else {
+      arrayRef.$token = []
       for (var ii = i + 1; ii < $tokens.length; ++ii) {
-        let nextNext = $tokens[ii]
-        if (/^-/.test(nextNext.$token) && !negative.test(nextNext.$token) && !isUnknownOptionAsArg(nextNext.$token)) break
+        next = $tokens[ii]
+        if (
+          isUndefined(next) ||
+          (
+            /^-/.test(next.$token) &&
+            !negative.test(next.$token) &&
+            !isUnknownOptionAsArg(next.$token)
+          )
+        ) break
         i = ii
-        processValue(key, nextNext)
-        next.$value.push(nextNext.$value)
+        processValue(key, next)
+        arrayRef.$token.push(next.$token)
+        arrayRef.$ref.push(next)
+        arrayRef.$value.push(next.$value)
       }
+      arrayRef.$token = arrayRef.$token.join(' ')
     }
 
-    setArg(key, next)
+    // console.log('eatArray: setting key %O using token %O', key, arrayRef)
+    setArg(key, arrayRef)
     return i
   }
 
@@ -468,13 +491,14 @@ function parse (args, opts) {
     processValue(key, token)
 
     var splitKey = key.split('.')
-    setKey($argv, splitKey, token)
+    const modifiedKeys = []
+    modifiedKeys.push(setKey($argv, splitKey, token))
 
     // handle populating aliases of the full key
     if (flags.aliases[key]) {
       flags.aliases[key].forEach(function (x) {
         x = x.split('.')
-        setKey($argv, x, token)
+        modifiedKeys.push(setKey($argv, x, token))
       })
     }
 
@@ -488,23 +512,25 @@ function parse (args, opts) {
         a.shift() // nuke the old key.
         x = x.concat(a)
 
-        setKey($argv, x, token)
+        modifiedKeys.push(setKey($argv, x, token))
       })
     }
 
     // Set normalize getter and setter when key is in 'normalize' but isn't an array
-    if (checkAllAliases(key, flags.normalize) && !checkAllAliases(key, flags.arrays)) {
-      var keys = [key].concat(flags.aliases[key] || [])
-      keys.forEach(function (key) {
-        argv.__defineSetter__(key, function (v) {
-          token.$token = path.normalize(v)
-        })
-
-        argv.__defineGetter__(key, function () {
-          return typeof token.$token === 'string' ? path.normalize(token.$token) : token.$token
-        })
-      })
-    }
+    // FIXME: make this work with refs
+    // if (checkAllAliases(key, flags.normalize) && !checkAllAliases(key, flags.arrays)) {
+    //   var keys = [key].concat(flags.aliases[key] || [])
+    //   keys.forEach(function (key) {
+    //     $argv.__defineSetter__(key, function (v) {
+    //       token.$token = path.normalize(v)
+    //     })
+    //
+    //     $argv.__defineGetter__(key, function () {
+    //       return typeof token.$token === 'string' ? path.normalize(token.$token) : token.$token
+    //     })
+    //   })
+    // }
+    return modifiedKeys
   }
 
   function addNewAlias (key, alias) {
@@ -518,13 +544,9 @@ function parse (args, opts) {
   }
 
   function processValue (key, token) {
-    console.log('Processing token %O for key %O', token, key)
-    // if (!isUndefined(token) && !isUndefined(token.$value)) {
-    //   console.log('Returning existing token value')
-    //   return token
-    // }
+    // console.log('Processing token %O for key %O', token, key)
     // strings may be quoted, clean this up as we assign values.
-    let val = isUndefined(token.$value) ? token.$token : token.$value
+    let val = token.hasOwnProperty('$value') ? token.$value : token.$token
     if (typeof val === 'string' &&
       (val[0] === "'" || val[0] === '"') &&
       val[val.length - 1] === val[0]
@@ -537,23 +559,25 @@ function parse (args, opts) {
       if (typeof val === 'string') val = val === 'true'
     }
 
-    var value = Array.isArray(val) ?
-      val.map(v => maybeCoerceNumber(key, v))
-      :
-      maybeCoerceNumber(key, val)
+    var value = Array.isArray(val)
+      ? val.map(v => maybeCoerceNumber(key, v))
+      : maybeCoerceNumber(key, val)
 
     // increment a count given as arg (either no value or value parsed as boolean)
     if (checkAllAliases(key, flags.counts) && (isUndefined(value) || typeof value === 'boolean')) {
-      value = Symbol('increment')
+      value = Symbol.for('increment')
     }
 
-    // Set normalized value when key is in 'normalize' and in 'arrays'
-    if (checkAllAliases(key, flags.normalize) && checkAllAliases(key, flags.arrays)) {
-      if (Array.isArray(val)) value = val.map(path.normalize)
-      else value = path.normalize(val)
+    // Set normalized value when key is in 'normalize'
+    if (checkAllAliases(key, flags.normalize)) {
+      if (Array.isArray(val)) {
+        if (val.every(v => (typeof v === 'string'))) value = val.map(p => path.normalize(p))
+      } else {
+        if (typeof val === 'string') value = path.normalize(val)
+      }
     }
     token.$value = value
-    console.log('New value token: %O', token)
+    // console.log('New value token: %O', token)
     return token
   }
 
@@ -577,7 +601,7 @@ function parse (args, opts) {
     applyDefaultsAndAliases(configLookup, flags.aliases, defaults)
 
     Object.keys(flags.configs).forEach(function (configKey) {
-      var configPath = $argv[configKey] || configLookup[configKey]
+      var configPath = ($argv[configKey] || configLookup[configKey] || { $value: null }).$value
       if (configPath) {
         try {
           var config = null
@@ -621,8 +645,12 @@ function parse (args, opts) {
       } else {
         // setting arguments via CLI takes precedence over
         // values within the config file.
-        if (!hasKey(argv, fullKey.split('.')) || (checkAllAliases(fullKey, flags.arrays) && configuration['combine-arrays'])) {
-          setArg(fullKey, value)
+        if (
+          !hasKey($argv, fullKey.split('.')) ||
+          (checkAllAliases(fullKey, flags.arrays) &&
+          configuration['combine-arrays'])
+        ) {
+          setArg(fullKey, { $ref: [], $value: value })
         }
       }
     })
@@ -651,23 +679,25 @@ function parse (args, opts) {
         })
 
         if (((configOnly && flags.configs[keys.join('.')]) || !configOnly) && !hasKey(argv, keys)) {
-          setArg(keys.join('.'), process.env[envVar])
+          setArg(keys.join('.'), { $ref: [], $value: process.env[envVar] })
         }
       }
     })
   }
 
-  function applyCoercions (argv) {
+  function applyCoercions ($argv) {
     var coerce
     var applied = {}
-    Object.keys(argv).forEach(function (key) {
+    Object.keys($argv).forEach(function (key) {
       if (!applied.hasOwnProperty(key)) { // If we haven't already coerced this option via one of its aliases
         coerce = checkAllAliases(key, flags.coercions)
         if (typeof coerce === 'function') {
           try {
-            var value = maybeCoerceNumber(key, coerce(argv[key]))
+            // FIXME: the coercion should apply to the flattened value so that modifying nested keys
+            //       works intuitively.
+            var value = maybeCoerceNumber(key, coerce($argv[key].$value))
             ;([].concat(flags.aliases[key] || [], key)).forEach(ali => {
-              applied[ali] = argv[ali] = value
+              applied[ali] = $argv[ali].$value = value
             })
           } catch (err) {
             error = err
@@ -687,14 +717,16 @@ function parse (args, opts) {
   }
 
   function applyDefaultsAndAliases (obj, aliases, defaults, canLog = false) {
+    // console.log('applying defaults and aliases')
     Object.keys(defaults).forEach(function (key) {
+      // console.log('setting defaults for key %O', key)
       if (!hasKey(obj, key.split('.'))) {
-        setKey(obj, key.split('.'), { $value: defaults[key] })
+        setKey(obj, key.split('.'), { $ref: [], $value: defaults[key] })
         if (canLog) defaulted[key] = true
 
         ;(aliases[key] || []).forEach(function (x) {
           if (hasKey(obj, x.split('.'))) return
-          setKey(obj, x.split('.'), { $value: defaults[key] })
+          setKey(obj, x.split('.'), { $ref: [], $value: defaults[key] })
         })
       }
     })
@@ -706,13 +738,14 @@ function parse (args, opts) {
     if (!configuration['dot-notation']) keys = [keys.join('.')]
 
     keys.slice(0, -1).forEach(function (key) {
-      o = (o[key] || {})
+      o = (o[key] || {}).$value
     })
 
     var key = keys[keys.length - 1]
 
-    if (typeof o !== 'object') return false
-    else return key in o
+    const _has = (typeof o === 'object' && key in o)
+    // console.log('hasKey: %s key %O in object %O', _has? 'found': 'did not find', keys, obj)
+    return _has
   }
 
   function setKey (obj, keys, token) {
@@ -720,29 +753,29 @@ function parse (args, opts) {
 
     if (!configuration['dot-notation']) keys = [keys.join('.')]
 
-    keys.slice(0, -1).forEach(function (key, index) {
+    keys.slice(0, -1).forEach(key => {
       if (typeof o === 'object' && o[key] === undefined) {
-        o[key] = { $ref: [], value: [] }
+        o[key] = { $value: {} }
       }
 
-      if (typeof o[key].value !== 'object' || Array.isArray(o[key].value)) {
-        // ensure that o[key].value is an array, and that the last item is an empty object.
-        if (Array.isArray(o[key].value)) {
-          o[key].value.push({})
+      if (typeof o[key].$value !== 'object' || Array.isArray(o[key].$value)) {
+        // ensure that o[key].$value is an array, and that the last item is an empty object.
+        if (Array.isArray(o[key].$value)) {
+          o[key].$value.push({})
         } else {
-          o[key].value = [o[key].value, {}]
+          o[key].$value = [o[key].$value, {}]
         }
 
-        // we want to update the empty object at the end of the o[key].value array, so set o to that object
-        o = o[key].value[o[key].value.length - 1]
+        // we want to update the empty object at the end of the o[key].$value array, so set o to that object
+        o = o[key].$value[o[key].$value.length - 1]
       } else {
-        o = o[key].value
+        o = o[key].$value
       }
     })
 
     var key = keys[keys.length - 1]
 
-    console.log('Setting key "%O" to token value "%O" in object %O', key, token, o)
+    // console.log('Setting key "%O" to token value "%O" in object %O', key, token, o)
 
     var isTypeArray = checkAllAliases(keys.join('.'), flags.arrays)
     var isValueArray = Array.isArray(token.$value)
@@ -751,39 +784,46 @@ function parse (args, opts) {
     // nargs has higher priority than duplicate
     if (!duplicate && checkAllAliases(key, flags.nargs)) {
       duplicate = true
-      if ((!isUndefined(o[key].value) && flags.nargs[key] === 1) || (Array.isArray(o[key].value) && o[key].value.length === flags.nargs[key])) {
-        o[key].value = undefined
+      if (
+        (!isUndefined(o[key]) && !isUndefined(o[key].$value) && flags.nargs[key] === 1) ||
+        (!isUndefined(o[key]) && Array.isArray(o[key].$value) && o[key].$value.length === flags.nargs[key])
+      ) {
+        o[key].$value = undefined
       }
     }
 
-    if (token.$value === Symbol('increment')) {
-      if (isUndefined(o[key])) o[key] = { value: 1, $ref: [] }
-      else {
-        o[key].value++
-      }
-    }
-    else if (!!o[key] && !!o[key].value && Array.isArray(o[key].value)) {
+    if (token.$value === Symbol.for('increment')) {
+      // if (o[key]) {
+      //   if (typeof o[key].$value === 'number') o[key].$value++
+      //   else o[key].$value = 1
+      // } else {
+      //   o[key] = { $value: 1 }
+      // }
+      if (isUndefined(o[key])) o[key] = {}
+      if (typeof o[key].$value === 'number') o[key].$value++
+      else o[key].$value = 1
+    } else if (!!o[key] && !!o[key].$value && Array.isArray(o[key].$value)) {
       if (duplicate && isTypeArray && isValueArray) {
-        o[key].value = configuration['flatten-duplicate-arrays'] ? o[key].value.concat(token.$value) : (Array.isArray(o[key].value[0]) ? o[key].value : [o[key].value]).concat([token.$value])
+        o[key].$value = configuration['flatten-duplicate-arrays'] ? o[key].$value.concat(token.$value) : (Array.isArray(o[key].$value[0]) ? o[key].$value : [o[key].$value]).concat([token.$value])
+      } else if (!duplicate && Boolean(isTypeArray) === Boolean(isValueArray)) {
+        o[key].$value = token.$value
+      } else {
+        o[key].$value = o[key].$value.concat([token.$value])
       }
-      else if (!duplicate && Boolean(isTypeArray) === Boolean(isValueArray)) {
-        o[key].value = token.$value
-      }
-      else {
-        o[key].value = o[key].value.concat([token.$value])
-      }
+    } else if ((o[key] === undefined || o[key].$value === undefined) && isTypeArray) {
+      if (o[key] === undefined) o[key] = {}
+      o[key].$value = isValueArray ? token.$value : [token.$value]
+    } else if (duplicate && !((o[key] === undefined || o[key].$value === undefined) || checkAllAliases(key, flags.counts))) {
+      o[key].$value = [o[key].$value, token.$value]
+    } else {
+      if (o[key] === undefined) o[key] = {}
+      o[key].$value = token.$value
     }
-    else if ((o[key] === undefined || o[key].value === undefined) && isTypeArray) {
-      o[key].value = isValueArray ? token.$value : [token.$value]
-    }
-    else if (duplicate && !((o[key] === undefined || o[key].value === undefined) || checkAllAliases(key, flags.counts))) {
-      o[key].value = [o[key].value, token.$value]
-    }
-    else {
-      if (o[key] === undefined) o[key] = { $ref: [] }
-      o[key].value = token.$value
-    }
+
+    if (!Array.isArray(o[key].$ref)) o[key].$ref = []
     o[key].$ref.push(token)
+    // console.log('setKey: result = %O', obj)
+    return o[key]
   }
 
   // extend the aliases list with inferred aliases.
@@ -966,14 +1006,36 @@ function parse (args, opts) {
     configuration,
     $ref: {
       $argv,
-      $tokens,
+      $tokens
     },
-    aliases: flags.aliases,
+    aliases: flags.aliases
+  }
+
+  function flattenArgv ($argv, seen = new Set()) {
+    if (seen.has($argv)) return $argv
+    seen.add($argv)
+    if ($argv === null || typeof $argv !== 'object') return $argv
+    if (Array.isArray($argv)) {
+      const ret = []
+      for (let ii in $argv) {
+        ret[ii] = flattenArgv($argv[ii], seen)
+      }
+      return ret
+    }
+    let ret = {}
+    const keys = Object.keys($argv)
+    if (keys.includes('$value')) {
+      return flattenArgv($argv.$value, seen)
+    }
+    keys.forEach(key => {
+      ret[key] = flattenArgv($argv[key], seen)
+    })
+    return ret
   }
 
   Object.defineProperty(ret, 'argv', {
-    get() {
-      return this.$ref.$argv
+    get () {
+      return flattenArgv(this.$ref.$argv)
     }
   })
 

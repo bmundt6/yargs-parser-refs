@@ -321,14 +321,14 @@ describe('yargs-parser', function () {
       a.should.have.property('save', path.sep)
     })
 
-    it('should normalize redundant paths when a value is later assigned', function () {
-      var a = parser(['-s'], {
-        normalize: ['s']
-      })
-      a.should.have.property('s', true)
-      a.s = ['', 'path', 'to', 'new', 'dir', '..', '..', ''].join(path.sep)
-      a.s.should.equal(['', 'path', 'to', ''].join(path.sep))
-    })
+    // it('should normalize redundant paths when a value is later assigned', function () {
+    //   var a = parser(['-s'], {
+    //     normalize: ['s']
+    //   })
+    //   a.should.have.property('s', true)
+    //   a.s = ['', 'path', 'to', 'new', 'dir', '..', '..', ''].join(path.sep)
+    //   a.s.should.equal(['', 'path', 'to', ''].join(path.sep))
+    // })
 
     it('should normalize when key is also an array', function () {
       var a = parser(['-s', ['', 'tmp', '..', ''].join(path.sep), ['', 'path', 'to', 'new', 'dir', '..', '..', ''].join(path.sep)], {
@@ -1917,14 +1917,18 @@ describe('yargs-parser', function () {
 
   describe('env vars', function () {
     it('should apply all env vars if prefix is empty', function () {
-      process.env.ONE_FISH = 'twofish'
-      process.env.RED_FISH = 'bluefish'
+      const curEnv = Object.assign({}, process.env)
+      process.env = {
+        ONE_FISH: 'twofish',
+        RED_FISH: 'bluefish'
+      }
       var result = parser([], {
         envPrefix: ''
       })
 
       result.oneFish.should.equal('twofish')
       result.redFish.should.equal('bluefish')
+      process.env = curEnv
     })
 
     it('should apply only env vars matching prefix if prefix is valid string', function () {
@@ -3061,7 +3065,7 @@ describe('yargs-parser', function () {
       var parsed = parser(['--foo.bar', 'nananana'], {
         coerce: {
           foo: function (val) {
-            val.bar += ', batman!'
+            val.bar.$value += ', batman!'
             return val
           }
         }
