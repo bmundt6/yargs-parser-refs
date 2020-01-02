@@ -74,6 +74,7 @@ Parses command line arguments returning a simple mapping of keys and values.
   * `opts.envPrefix`: environment variables (`process.env`) with the prefix provided should be parsed.
   * `opts.narg`: specify that a key requires `n` arguments: `{narg: {x: 2}}`.
   * `opts.normalize`: `path.normalize()` will be applied to values set to this key.
+  * `opts.hide`: keys should not appear in output `tokens`.
   * `opts.number`: keys should be treated as numbers.
   * `opts.string`: keys should be treated as strings (even if they resemble a number `-x 33`).
 
@@ -92,7 +93,7 @@ yargs engine.
 **expects:**
 
 * `args`: a string or array of strings representing options to parse.
-* `opts`: provide a set of hints indicating how `args`, inputs are identical to `require('yargs-parser')(args, opts={})`.
+* `opts`: provide a set of hints indicating how to parse `args`, inputs are identical to `require('yargs-parser')(args, opts={})`.
 
 **returns:**
 
@@ -109,17 +110,15 @@ yargs engine.
   * `boolean`: `{ foo: true }`
 * `configuration`: given by default settings and `opts.configuration`.
 * `$ref`: linked argv and tokens objects
-  * `$argv`: contains the same information as `argv`, but in the form
-    ```js
-    key: { $value: value, $ref: [...$tokens], hide: [Function: hide] }
-    ```
-    rather than
-    ```js
-    key: value
-    ```
+  * `$argv`: contains the same information as `argv`, but in the form <br>
+    `key: { $value: value, $ref: [...$tokens], hide: [Function: hide] }` <br>
+    rather than <br>
+    `key: value`, <br>
     where the `$ref` array refers to a subset of `$tokens`.
   * `$tokens`: contains the same information as `tokens`, but in the form `[{$token: t1}, {$token: t2}, ...]` rather than `[t1, t2, ...]`.
-  * modifying the `$token` string field of objects in `$tokens` affects the corresponding entry in `tokens`; setting `$token = null` will remove the corresponding entry in `tokens` (equivalently, the `hide()` function of a `$argv` entry will dereference all tokens which parse to that option key or one of its aliases).
+    * Modifying the `$token` string field of objects in `$tokens` affects the corresponding entry in `tokens`.
+    Setting `$token = null` will remove the corresponding entry in `tokens` (equivalently, the `hide()` function of a `$argv` entry will dereference all tokens which parse to that option key or one of its aliases).<br>
+    This constitutes a simple way to apply arbitrary transformations to a `process.argv` array in a command wrapper before passing it to the wrapped command.
 
 <a name="configuration"></a>
 

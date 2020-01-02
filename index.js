@@ -47,6 +47,7 @@ function parse (args, opts) {
     numbers: {},
     counts: {},
     normalize: {},
+    hide: {},
     configs: {},
     nargs: {},
     coercions: {},
@@ -98,6 +99,11 @@ function parse (args, opts) {
 
   ;[].concat(opts.normalize).filter(Boolean).forEach(function (key) {
     flags.normalize[key] = true
+    flags.keys.push(key)
+  })
+
+  ;[].concat(opts.hide).filter(Boolean).forEach(function (key) {
+    flags.hide[key] = true
     flags.keys.push(key)
   })
 
@@ -174,12 +180,12 @@ function parse (args, opts) {
         i = eatArray(i, m[1], $tokens)
       } else {
         tokenRef.$value = m[2]
-        setArg(m[1], tokenRef)
+        setArg(m[1], tokenRef).possiblyHide()
       }
     } else if (arg.match(negatedBoolean) && configuration['boolean-negation']) {
       key = arg.match(negatedBoolean)[1]
       tokenRef.$value = checkAllAliases(key, flags.arrays) ? [false] : false
-      setArg(key, tokenRef)
+      setArg(key, tokenRef).possiblyHide()
     } else if (arg.match(/^--.+/) || (
       !configuration['short-option-groups'] && arg.match(/^-[^-]+/)
     )) { // -- separated by space.
@@ -203,27 +209,27 @@ function parse (args, opts) {
           !checkAllAliases(key, flags.counts)
         ) {
           tokenRef.$value = next.$token
-          setArg(key, tokenRef).forEach(obj => {
-            obj.$ref.push(next)
-          })
+          setArg(key, tokenRef)
+            .pushRef(next)
+            .possiblyHide()
           next.$value = tokenRef.$value
           i++
         } else if (!isUndefined(next) && !isUndefined(next.$token) && /^(true|false)$/.test(next.$token)) {
           tokenRef.$value = next.$token
-          setArg(key, tokenRef).forEach(obj => {
-            obj.$ref.push(next)
-          })
+          setArg(key, tokenRef)
+            .pushRef(next)
+            .possiblyHide()
           next.$value = tokenRef.$value
           i++
         } else {
           tokenRef.$value = defaultValue(key)
-          setArg(key, tokenRef)
+          setArg(key, tokenRef).possiblyHide()
         }
       }
     } else if (arg.match(/^-.\..+=/)) { // dot-notation flag separated by '='.
       m = arg.match(/^-([^=]+)=([\s\S]*)$/)
       tokenRef.$value = m[2]
-      setArg(m[1], tokenRef)
+      setArg(m[1], tokenRef).possiblyHide()
     } else if (arg.match(/^-.\..+/) && !arg.match(negative)) {
       next = $tokens[i + 1]
       key = arg.match(/^-(.\..+)/)[1]
@@ -235,11 +241,11 @@ function parse (args, opts) {
         !checkAllAliases(key, flags.counts)
       ) {
         tokenRef.$value = next.$token
-        setArg(key, tokenRef)
+        setArg(key, tokenRef).possiblyHide()
         i++
       } else {
         tokenRef.$value = defaultValue(key)
-        setArg(key, tokenRef)
+        setArg(key, tokenRef).possiblyHide()
       }
     } else if (arg.match(/^-[^-]+/) && !arg.match(negative)) {
       // dot-notation flag separated by space.
@@ -263,7 +269,7 @@ function parse (args, opts) {
             i = eatArray(i, key, $tokens)
           } else {
             tokenRef.$value = value
-            setArg(key, tokenRef)
+            setArg(key, tokenRef).possiblyHide()
           }
 
           broken = true
@@ -272,7 +278,7 @@ function parse (args, opts) {
 
         if (next === '-') {
           tokenRef.$value = next
-          setArg(letters[j], tokenRef)
+          setArg(letters[j], tokenRef).possiblyHide()
           continue
         }
 
@@ -282,19 +288,19 @@ function parse (args, opts) {
           /^-?\d+(\.\d*)?(e-?\d+)?$/.test(next)
         ) {
           tokenRef.$value = next
-          setArg(letters[j], tokenRef)
+          setArg(letters[j], tokenRef).possiblyHide()
           broken = true
           break
         }
 
         if (letters[j + 1] && letters[j + 1].match(/\W/)) {
           tokenRef.$value = next
-          setArg(letters[j], tokenRef)
+          setArg(letters[j], tokenRef).possiblyHide()
           broken = true
           break
         } else {
           tokenRef.$value = defaultValue(letters[j])
-          setArg(letters[j], tokenRef)
+          setArg(letters[j], tokenRef).possiblyHide()
         }
       }
 
@@ -320,9 +326,9 @@ function parse (args, opts) {
           ) {
             tokenRef.$value = next.$token
             // console.log('setting short option -%s using token %O', key, tokenRef)
-            setArg(key, tokenRef).forEach(obj => {
-              obj.$ref.push(next)
-            })
+            setArg(key, tokenRef)
+              .pushRef(next)
+              .possiblyHide()
             i++
           } else if (
             next !== undefined &&
@@ -330,13 +336,13 @@ function parse (args, opts) {
             /^(true|false)$/.test(next.$token)
           ) {
             tokenRef.$value = next.$token
-            setArg(key, tokenRef).forEach(obj => {
-              obj.$ref.push(next)
-            })
+            setArg(key, tokenRef)
+              .pushRef(next)
+              .possiblyHide()
             i++
           } else {
             tokenRef.$value = defaultValue(key)
-            setArg(key, tokenRef)
+            setArg(key, tokenRef).possiblyHide()
           }
         }
       }
@@ -368,7 +374,7 @@ function parse (args, opts) {
 
   // for any counts either not in args or without an explicit default, set to 0
   Object.keys(flags.counts).forEach(function (key) {
-    if (!hasKey($argv, key.split('.'))) setArg(key, { $ref: [], $value: 0 })
+    if (!hasKey($argv, key.split('.'))) setArg(key, { $ref: [], $value: 0 }).possiblyHide()
   })
 
   // '--' defaults to undefined.
@@ -402,7 +408,7 @@ function parse (args, opts) {
     const toEat = checkAllAliases(key, flags.nargs)
 
     if (toEat === 0) {
-      setArg(key, { $ref: [], $value: defaultValue(key) })
+      setArg(key, { $ref: [], $value: defaultValue(key) }).possiblyHide()
       return i
     }
 
@@ -418,7 +424,7 @@ function parse (args, opts) {
 
     const consumed = Math.min(available, toEat)
     for (ii = i + 1; ii < (consumed + i + 1); ii++) {
-      setArg(key, tokens[ii])
+      setArg(key, tokens[ii]).possiblyHide()
     }
 
     return (i + consumed)
@@ -482,7 +488,7 @@ function parse (args, opts) {
     }
 
     // console.log('eatArray: setting key %O using token %O', key, arrayRef)
-    setArg(key, arrayRef)
+    setArg(key, arrayRef).possiblyHide()
     return i
   }
 
@@ -536,11 +542,29 @@ function parse (args, opts) {
     //     })
     //   })
     // }
+    modifiedKeys.pushRef = (ref) => {
+      modifiedKeys.forEach(x => {
+        x.$ref.push(ref)
+      })
+      return modifiedKeys
+    }
+    modifiedKeys.possiblyHide = (k = key) => {
+      modifiedKeys.forEach(x => {
+        x.possiblyHide(k)
+      })
+      return modifiedKeys
+    }
     return modifiedKeys
   }
 
   function hide () { // remove token references in $ref of this tokenRef
     this.$ref.forEach(token => { token.$token = null })
+  }
+
+  function possiblyHide (key) { // hide if hide[key] is true
+    if (checkAllAliases(key, flags.hide)) {
+      this.hide()
+    }
   }
 
   function addNewAlias (key, alias) {
@@ -660,7 +684,7 @@ function parse (args, opts) {
           (checkAllAliases(fullKey, flags.arrays) &&
           configuration['combine-arrays'])
         ) {
-          setArg(fullKey, { $ref: [], $value: value })
+          setArg(fullKey, { $ref: [], $value: value }).possiblyHide()
         }
       }
     })
@@ -689,7 +713,7 @@ function parse (args, opts) {
         })
 
         if (((configOnly && flags.configs[keys.join('.')]) || !configOnly) && !hasKey(argv, keys)) {
-          setArg(keys.join('.'), { $ref: [], $value: process.env[envVar] })
+          setArg(keys.join('.'), { $ref: [], $value: process.env[envVar] }).possiblyHide()
         }
       }
     })
@@ -833,6 +857,7 @@ function parse (args, opts) {
     if (!Array.isArray(o[key].$ref)) o[key].$ref = []
     o[key].$ref.push(token)
     o[key].hide = hide
+    o[key].possiblyHide = possiblyHide
     // console.log('setKey: result = %O', obj)
     return o[key]
   }
