@@ -100,6 +100,7 @@ yargs engine.
   * `key/value`: key value pairs for each argument and their aliases.
   * `_`: an array representing the positional arguments.
   * [optional] `--`:  an array with arguments after the end-of-options flag `--`.
+* `tokens`: the tokenized input string array, after any modifications.
 * `error`: populated with an error object if an exception occurred during parsing.
 * `aliases`: the inferred list of aliases built by combining lists in `opts.alias`.
 * `newAliases`: any new aliases added via camel-case expansion:
@@ -107,6 +108,18 @@ yargs engine.
 * `defaulted`: any new argument created by `opts.default`, no aliases included.
   * `boolean`: `{ foo: true }`
 * `configuration`: given by default settings and `opts.configuration`.
+* `$ref`: linked argv and tokens objects
+  * `$argv`: contains the same information as `argv`, but in the form
+    ```js
+    key: { $value: value, $ref: [...$tokens], hide: [Function: hide] }
+    ```
+    rather than
+    ```js
+    key: value
+    ```
+    where the `$ref` array refers to a subset of `$tokens`.
+  * `$tokens`: contains the same information as `tokens`, but in the form `[{$token: t1}, {$token: t2}, ...]` rather than `[t1, t2, ...]`.
+  * modifying the `$token` string field of objects in `$tokens` affects the corresponding entry in `tokens`; setting `$token = null` will remove the corresponding entry in `tokens` (equivalently, the `hide()` function of a `$argv` entry will dereference all tokens which parse to that option key or one of its aliases).
 
 <a name="configuration"></a>
 
