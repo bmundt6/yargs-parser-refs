@@ -582,6 +582,16 @@ function parse (args, opts) {
     }
   }
 
+  function isExplicit () { // return true if there is any $token in $refs of this tokenRef
+    // (i.e. the argument was provided explicitly on the command line)
+    return this.$ref.some(tokenRef => ('$token' in tokenRef))
+  }
+
+  function isImplicit () { // return true if there are no refs in $ref pointing to actual tokens
+    // (i.e. the argument was set via config file, alias, default, etc.)
+    return !this.isExplicit()
+  }
+
   function addNewAlias (key, alias) {
     if (!(flags.aliases[key] && flags.aliases[key].length)) {
       flags.aliases[key] = [alias]
@@ -870,6 +880,8 @@ function parse (args, opts) {
     o[key].$ref.push(token)
     o[key].hide = hide
     o[key].possiblyHide = possiblyHide
+    o[key].isExplicit = isExplicit
+    o[key].isImplicit = isImplicit
     // console.log('setKey: result = %O', obj)
     return o[key]
   }
