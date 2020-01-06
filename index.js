@@ -781,16 +781,19 @@ function parse (args, opts) {
 
   function hasKey (obj, keys) {
     var o = obj
+    if (!obj) return false
 
     if (!configuration['dot-notation']) keys = [keys.join('.')]
 
-    keys.slice(0, -1).forEach(function (key) {
-      o = (o[key] || {}).$value
-    })
+    if (!keys.slice(0, -1).every(key => {
+      if (o) o = (o[key] || { $value: null }).$value
+      else return false
+      return true
+    })) return false
 
     var key = keys[keys.length - 1]
 
-    const _has = (typeof o === 'object' && key in o)
+    const _has = (typeof o === 'object' && o !== null && key in o)
     // console.log('hasKey: %s key %O in object %O', _has? 'found': 'did not find', keys, obj)
     return _has
   }
