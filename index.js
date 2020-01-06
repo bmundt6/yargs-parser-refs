@@ -413,7 +413,9 @@ function parse (args, opts) {
 
     if (toEat === 0) {
       const modifiedKeys = setArg(key, { $value: defaultValue(key) })
-      modifiedKeys.$ref = nargsRef
+      modifiedKeys.forEach(key => {
+        key.$ref = nargsRef
+      })
       modifiedKeys.possiblyHide()
       return i
     }
@@ -843,12 +845,6 @@ function parse (args, opts) {
     }
 
     if (token.$value === Symbol.for('increment')) {
-      // if (o[key]) {
-      //   if (typeof o[key].$value === 'number') o[key].$value++
-      //   else o[key].$value = 1
-      // } else {
-      //   o[key] = { $value: 1 }
-      // }
       if (isUndefined(o[key])) o[key] = {}
       if (typeof o[key].$value === 'number') o[key].$value++
       else o[key].$value = 1
