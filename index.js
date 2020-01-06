@@ -261,10 +261,12 @@ function parse (args, opts) {
 
           // nargs format = '-f=monkey washing cat'
           if (checkAllAliases(key, flags.nargs)) {
+            tokenRef.$token = letters.slice(0, j + 1)
             $tokens.splice(i + 1, 0, { $token: value })
             i = eatNargs(i, key, $tokens)
           // array format = '-f=a b c'
           } else if (checkAllAliases(key, flags.arrays)) {
+            tokenRef.$token = letters.slice(0, j + 1)
             $tokens.splice(i + 1, 0, { $token: value })
             i = eatArray(i, key, $tokens)
           } else {
@@ -406,9 +408,13 @@ function parse (args, opts) {
   function eatNargs (i, key, tokens) {
     var ii
     const toEat = checkAllAliases(key, flags.nargs)
+    const nargsRef = []
+    if (tokens[i]) nargsRef.push(tokens[i])
 
     if (toEat === 0) {
-      setArg(key, { $ref: [], $value: defaultValue(key) }).possiblyHide()
+      const modifiedKeys = setArg(key, { $value: defaultValue(key) })
+      modifiedKeys.$ref = nargsRef
+      modifiedKeys.possiblyHide()
       return i
     }
 
@@ -423,9 +429,16 @@ function parse (args, opts) {
     if (available < toEat) error = Error(__('Not enough arguments following: %s', key))
 
     const consumed = Math.min(available, toEat)
+    const modifiedKeys = []
     for (ii = i + 1; ii < (consumed + i + 1); ii++) {
-      setArg(key, tokens[ii]).possiblyHide()
+      const tokenRef = tokens[ii]
+      nargsRef.push(tokenRef)
+      modifiedKeys.push(setArg(key, tokenRef))
     }
+    modifiedKeys.forEach(keys => {
+      keys.forEach(key => { key.$ref = nargsRef })
+    })
+    modifiedKeys.forEach(keys => { keys.possiblyHide() })
 
     return (i + consumed)
   }
@@ -903,7 +916,7 @@ function parse (args, opts) {
 
   // return the 1st set flag for any of a key's aliases (or false if no flag set)
   function checkAllAliases (key, flag) {
-    var toCheck = [].concat(flags.aliases[key] || [], key)
+    var toCheck = [].concat(key, flags.aliases[key] || [])
     let setAlias = toCheck.find(key => flag.hasOwnProperty(key))
     return setAlias ? flag[setAlias] : false
   }
