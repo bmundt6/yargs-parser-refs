@@ -141,6 +141,7 @@ function parse (args, opts) {
   checkConfiguration()
 
   const $argv = { _: { $ref: [], $value: [], hide } }
+  $argv._.unset = unsetArg.bind($argv._, '_')
   let notFlags = []
 
   for (let i = 0; i < $tokens.length; ++i) {
@@ -572,6 +573,33 @@ function parse (args, opts) {
     return modifiedKeys
   }
 
+  function unsetArg (key) { // unset all aliases of a key
+    var splitKey = key.split('.')
+    unsetKey($argv, splitKey)
+
+    // handle populating aliases of the full key
+    if (flags.aliases[key]) {
+      flags.aliases[key].forEach(function (x) {
+        x = x.split('.')
+        unsetKey($argv, x)
+      })
+    }
+
+    // handle populating aliases of the first element of the dot-notation key
+    if (splitKey.length > 1 && configuration['dot-notation']) {
+      ;(flags.aliases[splitKey[0]] || []).forEach(function (x) {
+        x = x.split('.')
+
+        // expand alias with nested objects in key
+        var a = [].concat(splitKey)
+        a.shift() // nuke the old key.
+        x = x.concat(a)
+
+        unsetKey($argv, x)
+      })
+    }
+  }
+
   function hide () { // remove token references in $ref of this tokenRef
     this.$ref.forEach(token => { token.$token = null })
   }
@@ -879,10 +907,52 @@ function parse (args, opts) {
     if (!Array.isArray(o[key].$ref)) o[key].$ref = []
     o[key].$ref.push(token)
     o[key].hide = hide
+    o[key].unset = unsetArg.bind(o[key], keys.join('.'))
     o[key].possiblyHide = possiblyHide
     o[key].isExplicit = isExplicit
     o[key].isImplicit = isImplicit
     // console.log('setKey: result = %O', obj)
+    return o[key]
+  }
+
+  function unsetKey (obj, keys) { // delete the value and references of a key in obj
+    var o = obj
+
+    if (!configuration['dot-notation']) keys = [keys.join('.')]
+
+    keys.slice(0, -1).forEach(key => {
+      if (typeof o === 'object' && o[key] === undefined) {
+        o[key] = { $value: {} }
+      }
+
+      if (typeof o[key].$value !== 'object' || Array.isArray(o[key].$value)) {
+        // ensure that o[key].$value is an array, and that the last item is an empty object.
+        if (Array.isArray(o[key].$value)) {
+          o[key].$value.push({})
+        } else {
+          o[key].$value = [o[key].$value, {}]
+        }
+
+        // we want to update the empty object at the end of the o[key].$value array, so set o to that object
+        o = o[key].$value[o[key].$value.length - 1]
+      } else {
+        o = o[key].$value
+      }
+    })
+
+    var key = keys[keys.length - 1]
+
+    o[key].$value = null
+
+    if (!Array.isArray(o[key].$ref)) {
+      o[key].$ref = []
+    } else {
+      o[key].$ref.forEach(token => {
+        token.$token = null
+        token.$value = null
+      })
+    }
+
     return o[key]
   }
 
