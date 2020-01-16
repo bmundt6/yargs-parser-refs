@@ -140,8 +140,11 @@ function parse (args, opts) {
 
   checkConfiguration()
 
-  const $argv = { _: { $ref: [], $value: [], hide } }
-  $argv._.unset = unsetArg.bind($argv._, '_')
+  const $argv = { _: { $ref: [], $value: [], hide, pushRefs } }
+  $argv._.unset = unset.bind($argv._, '_')
+  $argv._.pushRefs = pushRefs.bind($argv._, '_')
+  $argv._.unshiftRefs = unshiftRefs.bind($argv._, '_')
+  $argv._.insertRefs = insertRefs.bind($argv._, '_')
   let notFlags = []
 
   for (let i = 0; i < $tokens.length; ++i) {
@@ -573,15 +576,23 @@ function parse (args, opts) {
     return modifiedKeys
   }
 
-  function unsetArg (key) { // unset all aliases of a key
+  function applyToArg (key, cb, ...rest) { // applies the callback function cb to all matching keys and returns the matched keys
+    if (/-/.test(key) && configuration['camel-case-expansion']) {
+      var alias = key.split('.').map(function (prop) {
+        return camelCase(prop)
+      }).join('.')
+      addNewAlias(key, alias)
+    }
+
     var splitKey = key.split('.')
-    unsetKey($argv, splitKey)
+    const modifiedKeys = []
+    modifiedKeys.push(cb.bind(retrieveTokenRefByKey($argv, splitKey))(...rest))
 
     // handle populating aliases of the full key
     if (flags.aliases[key]) {
       flags.aliases[key].forEach(function (x) {
         x = x.split('.')
-        unsetKey($argv, x)
+        modifiedKeys.push(cb.bind(retrieveTokenRefByKey($argv, x))(...rest))
       })
     }
 
@@ -595,13 +606,99 @@ function parse (args, opts) {
         a.shift() // nuke the old key.
         x = x.concat(a)
 
-        unsetKey($argv, x)
+        modifiedKeys.push(cb.bind(retrieveTokenRefByKey($argv, x))(...rest))
       })
     }
+
+    return modifiedKeys
   }
 
   function hide () { // remove token references in $ref of this tokenRef
+    // XXX: does not check $ref of aliases; should it?
+    //      (only way for alias refs to be mismatched is user intervention at a specific alias key)
     this.$ref.forEach(token => { token.$token = null })
+    // e.g:
+    // return applyToArg(key, function () {
+    //   this.$ref.forEach(token => { token.$token = null })
+    // })
+  }
+
+  function pushRefs (key, ...tokens) { // push new token references to $tokens and link to this tokenRef
+    const tokenRefs = [...tokens].map(token => {
+      if (typeof token !== 'object') token = { $token: String(token) }
+      if (!token.$value) token.$value = this.$value
+      if (!token.$token) token.$token = null
+      return token
+    })
+    applyToArg(key, function () {
+      this.$ref.push(...tokenRefs)
+    })
+    $tokens.push(...tokenRefs)
+  }
+
+  function unshiftRefs (key, ...tokens) { // pushRefs but at front
+    const tokenRefs = [...tokens].map(token => {
+      if (typeof token !== 'object') token = { $token: String(token) }
+      if (!token.$value) token.$value = this.$value
+      if (!token.$token) token.$token = null
+      return token
+    })
+    applyToArg(key, function () {
+      this.$ref.unshift(...tokenRefs)
+    })
+    $tokens.unshift(...tokenRefs)
+  }
+
+  function insertRefs (key, index, ...tokens) { // insert the tokens at index of $tokens
+    const tokenRefs = [...tokens].map(token => {
+      if (typeof token !== 'object') token = { $token: String(token) }
+      if (!token.$value) token.$value = this.$value
+      if (!token.$token) token.$token = null
+      return token
+    })
+    const numRefs = [...tokens].length
+    const firstPostInsertion = index + numRefs
+    $tokens.splice(index, 0, ...tokenRefs)
+
+    // find the first index of any token in $ref in $tokens after the insertion point;
+    // insert at that index.
+    applyToArg(key, function () {
+      let ii = firstPostInsertion
+      let jj = -1
+      for (; ii < $tokens.length; ++ii) {
+        jj = this.$ref.indexOf($tokens[ii])
+        if (jj !== -1) break
+      }
+      if (jj === -1) jj = this.$ref.length
+      this.$ref.splice(jj, 0, ...tokenRefs)
+    })
+  }
+
+  function unset (key) { // remove both tokens and values of all aliases of this
+    //                   // good way of ignoring an argument completely
+    return applyToArg(key, function () {
+      this.$value = null
+      this.$ref.forEach(token => {
+        token.$token = null
+        token.$value = null
+      })
+    })
+  }
+
+  // function insertRefs (key, index, ...tokens) { // insert new tokens at specified index and push to this tokenRef
+  //   //TODO
+  // }
+
+  function pushRefsIfImplicit (key, ...tokens) { // push new token references if this tokenRef is implicit
+    if (this.isImplicit()) pushRefs.bind(this, key)(...tokens)
+  }
+
+  function unshiftRefsIfImplicit (key, ...tokens) { // unshift new token references if this tokenRef is implicit
+    if (this.isImplicit()) unshiftRefs.bind(this, key)(...tokens)
+  }
+
+  function insertRefsIfImplicit (key, index, ...tokens) { // unshift new token references if this tokenRef is implicit
+    if (this.isImplicit()) insertRefs.bind(this, key)(index, ...tokens)
   }
 
   function possiblyHide (key) { // hide if hide[key] is true
@@ -611,12 +708,12 @@ function parse (args, opts) {
   }
 
   function isExplicit () { // return true if there is any $token in $refs of this tokenRef
-    // (i.e. the argument was provided explicitly on the command line)
+    // (i.e. the argument is provided explicitly on the command line or through an alias)
     return this.$ref.some(tokenRef => ('$token' in tokenRef))
   }
 
   function isImplicit () { // return true if there are no refs in $ref pointing to actual tokens
-    // (i.e. the argument was set via config file, alias, default, etc.)
+    // (i.e. the argument is set via config file, envar, default, etc.)
     return !this.isExplicit()
   }
 
@@ -907,7 +1004,13 @@ function parse (args, opts) {
     if (!Array.isArray(o[key].$ref)) o[key].$ref = []
     o[key].$ref.push(token)
     o[key].hide = hide
-    o[key].unset = unsetArg.bind(o[key], keys.join('.'))
+    o[key].unset = unset.bind(o[key], keys.join('.'))
+    o[key].pushRefs = pushRefs.bind(o[key], keys.join('.'))
+    o[key].pushRefsIfImplicit = pushRefsIfImplicit.bind(o[key], keys.join('.'))
+    o[key].unshiftRefs = unshiftRefs.bind(o[key], keys.join('.'))
+    o[key].unshiftRefsIfImplicit = unshiftRefsIfImplicit.bind(o[key], keys.join('.'))
+    o[key].insertRefs = insertRefs.bind(o[key], keys.join('.'))
+    o[key].insertRefsIfImplicit = insertRefsIfImplicit.bind(o[key], keys.join('.'))
     o[key].possiblyHide = possiblyHide
     o[key].isExplicit = isExplicit
     o[key].isImplicit = isImplicit
@@ -915,7 +1018,7 @@ function parse (args, opts) {
     return o[key]
   }
 
-  function unsetKey (obj, keys) { // delete the value and references of a key in obj
+  function retrieveTokenRefByKey (obj, keys) { // find a tokenRef by key
     var o = obj
 
     if (!configuration['dot-notation']) keys = [keys.join('.')]
@@ -942,17 +1045,7 @@ function parse (args, opts) {
 
     var key = keys[keys.length - 1]
 
-    o[key].$value = null
-
-    if (!Array.isArray(o[key].$ref)) {
-      o[key].$ref = []
-    } else {
-      o[key].$ref.forEach(token => {
-        token.$token = null
-        token.$value = null
-      })
-    }
-
+    if (!Array.isArray(o[key].$ref)) o[key].$ref = []
     return o[key]
   }
 
