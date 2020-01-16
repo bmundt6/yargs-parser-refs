@@ -140,11 +140,46 @@ function parse (args, opts) {
 
   checkConfiguration()
 
-  const $argv = { _: { $ref: [], $value: [], hide, pushRefs } }
-  $argv._.unset = unset.bind($argv._, '_')
-  $argv._.pushRefs = pushRefs.bind($argv._, '_')
-  $argv._.unshiftRefs = unshiftRefs.bind($argv._, '_')
-  $argv._.insertRefs = insertRefs.bind($argv._, '_')
+  const $argv = { _: { $ref: [], $value: [], hide } }
+  $argv._.unset = function () {
+    this.$value = []
+    this.hide()
+  }
+  $argv._.pushRefs = function (...tokens) {
+    const tokenRefs = [...tokens].map(coerceTokenRef)
+    tokens = tokenRefs.map(x => x.$token)
+    this.$ref.push(...tokenRefs)
+    this.$value.push(...tokens)
+    $tokens.push(...tokenRefs)
+  }
+  $argv._.unshiftRefs = function (...tokens) {
+    const tokenRefs = [...tokens].map(coerceTokenRef)
+    tokens = tokenRefs.map(x => x.$token)
+    this.$ref.unshift(...tokenRefs)
+    this.$value.unshift(...tokens)
+    $tokens.unshift(...tokenRefs)
+  }
+  $argv._.insertRefs = function (index, ...tokens) {
+    const tokenRefs = [...tokens].map(coerceTokenRef)
+    tokens = tokenRefs.map(x => x.$token)
+    const numRefs = [...tokens].length
+    const firstPostInsertion = index + numRefs
+    $tokens.splice(index, 0, ...tokenRefs)
+    let jj = -1
+    for (let ii = firstPostInsertion; ii < $tokens.length; ++ii) {
+      jj = this.$ref.indexOf($tokens[ii])
+      if (jj !== -1) break
+    }
+    if (jj === -1) jj = this.$ref.length
+    this.$ref.splice(jj, 0, ...tokenRefs)
+    jj = -1
+    for (let ii = firstPostInsertion; ii < $tokens.length; ++ii) {
+      jj = this.$ref.indexOf($tokens[ii])
+      if (jj !== -1) break
+    }
+    if (jj === -1) jj = this.$value.length
+    this.$value.splice(jj, 0, ...tokens)
+  }
   let notFlags = []
 
   for (let i = 0; i < $tokens.length; ++i) {
@@ -623,12 +658,17 @@ function parse (args, opts) {
     // })
   }
 
+  function coerceTokenRef (token) { // convert arbitrary value to { $token }
+    if (typeof token !== 'object') token = { $token: String(token) }
+    if (!token.$token) token.$token = null
+    return token
+  }
+
   function pushRefs (key, ...tokens) { // push new token references to $tokens and link to this tokenRef
     const tokenRefs = [...tokens].map(token => {
-      if (typeof token !== 'object') token = { $token: String(token) }
-      if (!token.$value) token.$value = this.$value
-      if (!token.$token) token.$token = null
-      return token
+      const tokenRef = coerceTokenRef(token)
+      if (!tokenRef.$value) tokenRef.$value = this.$value
+      return tokenRef
     })
     applyToArg(key, function () {
       this.$ref.push(...tokenRefs)
@@ -638,10 +678,9 @@ function parse (args, opts) {
 
   function unshiftRefs (key, ...tokens) { // pushRefs but at front
     const tokenRefs = [...tokens].map(token => {
-      if (typeof token !== 'object') token = { $token: String(token) }
-      if (!token.$value) token.$value = this.$value
-      if (!token.$token) token.$token = null
-      return token
+      const tokenRef = coerceTokenRef(token)
+      if (!tokenRef.$value) tokenRef.$value = this.$value
+      return tokenRef
     })
     applyToArg(key, function () {
       this.$ref.unshift(...tokenRefs)
@@ -651,10 +690,9 @@ function parse (args, opts) {
 
   function insertRefs (key, index, ...tokens) { // insert the tokens at index of $tokens
     const tokenRefs = [...tokens].map(token => {
-      if (typeof token !== 'object') token = { $token: String(token) }
-      if (!token.$value) token.$value = this.$value
-      if (!token.$token) token.$token = null
-      return token
+      const tokenRef = coerceTokenRef(token)
+      if (!tokenRef.$value) tokenRef.$value = this.$value
+      return tokenRef
     })
     const numRefs = [...tokens].length
     const firstPostInsertion = index + numRefs
